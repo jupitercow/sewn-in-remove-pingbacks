@@ -1,4 +1,3 @@
-sewn-in-remove-pingbacks
-========================
+# Sewn In Remove Pingbacks
 
-Sewn In Remove Pingbacks
+WordPress plugin that disables all WordPress pingbacks.
