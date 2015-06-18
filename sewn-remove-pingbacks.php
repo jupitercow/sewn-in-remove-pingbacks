@@ -1,74 +1,117 @@
 <?php
-/*
-Plugin Name: Sewn In Remove WordPress Pingbacks
-Plugin URI: https://github.com/jupitercow/sewn-in-remove-pingbacks
-Description: Disable pingbacks.
-Version: 1.0.0
-Author: Jake Snyder
-Author URI: http://Jupitercow.com/
-License: GPLv2
-License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-------------------------------------------------------------------------
-Copyright 2014 Jupitercow, Inc.
+/**
+ * @link              https://github.com/jupitercow/sewn-in-remove-pingbacks
+ * @since             1.0.2
+ * @package           Sewn_Remove_Pingbacks
+ *
+ * @wordpress-plugin
+ * Plugin Name:       Sewn In Remove Pingbacks
+ * Plugin URI:        https://wordpress.org/plugins/sewn-in-remove-pingbacks/
+ * Description:       Disable pingbacks.
+ * Version:           1.0.2
+ * Author:            jcow
+ * Author URI:        http://Jupitercow.com/
+ * Contributer:       ekaj
+ * License:           GPL-2.0+
+ * License URI:       http://www.gnu.org/licenses/gpl-2.0.txt
+ */
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+// If this file is called directly, abort.
+if ( ! defined( 'WPINC' ) ) {
+	die;
+}
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
+$class_name = 'Sewn_Remove_Pingbacks';
+if (! class_exists($class_name) ) :
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
-*/
-
-if (! class_exists('sewn_remove_pingbacks') ) :
-
-add_action( 'init', array('sewn_remove_pingbacks', 'init') );
-
-class sewn_remove_pingbacks
+class Sewn_Remove_Pingbacks
 {
 	/**
-	 * Initialize the Class
+	 * Load the plugin.
 	 *
-	 * @author  Jake Snyder
-	 * @since	1.0.0
+	 * @since	1.0.2
 	 * @return	void
 	 */
-	public static function init()
+	public function run()
 	{
+		register_activation_hook( __FILE__,               array($this, 'activate') );
+		register_deactivation_hook( __FILE__,             array($this, 'deactivate') );
+
 		// remove RSD link
 		remove_action( 'wp_head', 'rsd_link' );
 
-		// actions
-		add_action( 'xmlrpc_call',                        array(__CLASS__, 'disable_xmlrpc') );
+		add_action( 'xmlrpc_call',                        array($this, 'disable_xmlrpc') );
+		#add_filter( 'xmlrpc_methods',                     array($this, 'remove_xmlrpc_methods') );
 
-		// filters
-		add_filter( 'wp_headers',                         array(__CLASS__, 'remove_ping_headers'), 10, 1 );
-		add_filter( 'rewrite_rules_array',                array(__CLASS__, 'remove_ping_rewrites') );
-		add_filter( 'bloginfo_url',                       array(__CLASS__, 'remove_ping_pingback_url'), 10, 2 );
+		add_filter( 'wp_headers',                         array($this, 'remove_ping_headers'), 10, 1 );
+		add_filter( 'rewrite_rules_array',                array($this, 'remove_ping_rewrites') );
+		add_filter( 'bloginfo_url',                       array($this, 'remove_ping_pingback_url'), 10, 2 );
 		add_filter( 'pre_update_option_enable_xmlrpc',    '__return_false' );
 		add_filter( 'pre_option_enable_xmlrpc',           '__return_zero' );
+		add_filter( 'mod_rewrite_rules',                  array($this, 'htaccess') );
 	}
 
 	/**
-	 * Disable XMLRPC call
+	 * Activate the plugin
+	 *
+	 * @author	ekaj
+	 * @since	1.0.1
+	 * @return	void
 	 */
-	public static function disable_xmlrpc( $action )
+	public function activate()
+	{
+		add_filter( 'mod_rewrite_rules', array($this, 'htaccess') );
+		flush_rewrite_rules();
+	}
+
+	/**
+	 * Deactivate the plugin
+	 *
+	 * @author	ekaj
+	 * @since	1.0.1
+	 * @return	void
+	 */
+	public function deactivate()
+	{
+		remove_filter( 'mod_rewrite_rules', array($this, 'htaccess') );
+		flush_rewrite_rules();
+	}
+
+	/**
+	 * Disable the xmlprc
+	 *
+	 * @author	ekaj
+	 * @since	1.0.0
+	 * @param	string	$action	xmlrpc actions
+	 * @return	void
+	 */
+	public function disable_xmlrpc( $action )
 	{
 		if ( 'pingback.ping' === $action )
 		{
 			wp_die( 
 				'Pingbacks are not supported',
 				'Not Allowed!',
-				array( 'response' => 403 ),
+				array( 'response' => 403 )
 			);
 		}
+	}
+
+	
+	/**
+	 * Remove the actual XMLRPC methods
+	 *
+	 * @author	ekaj
+	 * @since	1.0.1
+	 * @param	array	$methods	xmlrpc methods
+	 * @return	array	The modified methods with pingback removed
+	 */
+	public function remove_xmlrpc_methods( $methods )
+	{
+		unset( $methods['pingback.ping'] );
+		#unset( $methods['pingback.extensions.getPingbacks'] );
+		return $methods;
 	}
 
 	/**
@@ -77,10 +120,12 @@ class sewn_remove_pingbacks
 	 * Does not modify $post['ping_status'] - could read 'open'
 	 * Does not modify $default_ping_status - could read 'open'
 	 *
-	 * @param	arr		$headers	Array of header items
-	 * @return	arr		$headers	Modified header array with pingbacks removed
+	 * @author	ekaj
+	 * @since	1.0.0
+	 * @param	array	$headers	Array of header items
+	 * @return	array	Modified header array with pingbacks removed
 	 */
-	public static function remove_ping_headers( $headers )
+	public function remove_ping_headers( $headers )
 	{
 		if ( isset($headers['X-Pingback']) ) {
 			unset($headers['X-Pingback']);
@@ -91,10 +136,12 @@ class sewn_remove_pingbacks
 	/**
 	 * Kill the rewrite rule
 	 *
-	 * @param arr $rules Array of rewrite rules
-	 * @return arr $rules Modified rewrite rules with pingbacks removed
+	 * @author	ekaj
+	 * @since	1.0.0
+	 * @param 	array	$rules	Array of rewrite rules
+	 * @return 	array	Modified rewrite rules with pingbacks removed
 	 */
-	public static function remove_ping_rewrites( $rules )
+	public function remove_ping_rewrites( $rules )
 	{
 		foreach ( $rules as $rule => $rewrite )
 		{
@@ -108,17 +155,37 @@ class sewn_remove_pingbacks
 	/**
 	 * Kill bloginfo( 'pingback_url' )
 	 *
-	 * @param mixed $output The URL returned by bloginfo().
-	 * @param mixed $show   Type of information requested.
-	 * @return arr $rules Modified rewrite rules with pingbacks removed
+	 * @author	ekaj
+	 * @since	1.0.0
+	 * @param 	mixed	$output	The URL returned by bloginfo().
+	 * @param 	mixed	$show	Type of information requested.
+	 * @return 	array	Modified rewrite rules with pingbacks removed
 	 */
-	public static function remove_ping_pingback_url( $output, $show )
+	public function remove_ping_pingback_url( $output, $show )
 	{
 		if ( 'pingback_url' == $show ) {
 			$output = '';
 		}
 		return $output;
 	}
+
+	/**
+	 * Remove access to the xml-rpc file completely at the server level
+	 *
+	 * @author	ekaj
+	 * @since	1.0.0
+	 * @param	array	$rules	The current rules
+	 * @return	array	Modified rules
+	 */
+	public function htaccess( $rules )
+	{
+		$new_rules = "<Files xmlrpc.php>\n\tSatisfy any\n\tOrder allow,deny\n\tDeny from all\n</Files>\n\n";
+		return $new_rules . $rules;
+	}
 }
+
+$$class_name = new $class_name;
+$$class_name->run();
+unset($class_name);
 
 endif;
